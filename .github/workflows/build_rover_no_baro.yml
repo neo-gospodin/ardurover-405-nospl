@@ -70,7 +70,7 @@ jobs:
           change(r"^define OSD_ENABLED 1$", "define OSD_ENABLED 0", "OSD flag")
           # OSD is absent; disable MSP DisplayPort too, otherwise it compiles
           # references to OSD-only methods and fails get_current_screen().
-          s += "\\nundef HAL_WITH_MSP_DISPLAYPORT\\ndefine HAL_WITH_MSP_DISPLAYPORT 0\\n"
+          s += "\nundef HAL_WITH_MSP_DISPLAYPORT\ndefine HAL_WITH_MSP_DISPLAYPORT 0\nundef HAL_MSP_ENABLED\ndefine HAL_MSP_ENABLED 0\n"
           change(r"^define HAL_OSD_TYPE_DEFAULT 1$", "define HAL_OSD_TYPE_DEFAULT 0", "OSD type")
           change(r"^define HAL_OS_FATFS_IO 1$", "define HAL_OS_FATFS_IO 0", "FATFS")
           change(r"^ROMFS_WILDCARD libraries/AP_OSD/fonts/font0.bin$", "# No OSD font", "OSD font")
