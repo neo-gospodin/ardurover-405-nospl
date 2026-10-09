@@ -95,6 +95,8 @@ jobs:
           # OSD is absent; disable MSP DisplayPort too, otherwise it compiles
           # references to OSD-only methods and fails get_current_screen().
           s += "\nundef HAL_WITH_MSP_DISPLAYPORT\ndefine HAL_WITH_MSP_DISPLAYPORT 0\nundef HAL_MSP_ENABLED\ndefine HAL_MSP_ENABLED 0\n"
+          # New installations start UART1 at 115200 baud (ArduPilot stores baud in kbaud).
+          s += "\ndefine DEFAULT_SERIAL1_BAUD 115\n"
           change(r"^define HAL_OSD_TYPE_DEFAULT 1$", "define HAL_OSD_TYPE_DEFAULT 0", "OSD type")
           change(r"^define HAL_OS_FATFS_IO 1$", "define HAL_OS_FATFS_IO 0", "FATFS")
           change(r"^ROMFS_WILDCARD libraries/AP_OSD/fonts/font0.bin$", "# No OSD font", "OSD font")
@@ -108,6 +110,18 @@ jobs:
           p.write_text(t)
           print("custom board patched")
           PY
+
+      - name: Embed AHRS Pitch180 and UART1 115200 as factory defaults
+        working-directory: ardupilot
+        run: |
+          set -euo pipefail
+          cat > custom_defaults.parm <<'PARAMS'
+          AHRS_ORIENTATION 12
+          SERIAL1_BAUD 115
+          SERIAL1_PROTOCOL 2
+          PARAMS
+          echo "Custom factory defaults:"
+          cat custom_defaults.parm
 
       - name: Build firmware
         working-directory: ardupilot
@@ -132,15 +146,21 @@ jobs:
           ./waf configure --board MatekF405-TE --bootloader
           ./waf bootloader -j2
           cp build/MatekF405-TE/bin/AP_Bootloader.bin Tools/bootloaders/MatekF405-TE_bl.bin
-          ./waf configure --board MatekF405-TE
+          ./waf configure --board MatekF405-TE --default-parameters=custom_defaults.parm
           ./waf rover -j2
+          echo "---- Verify processed factory defaults were embedded ----"
+          defaults="$(find build/MatekF405-TE -name processed_defaults.parm -print -quit)"
+          test -n "$defaults" || { echo "::error::processed_defaults.parm not generated"; exit 1; }
+          grep -Fx 'AHRS_ORIENTATION 12' "$defaults"
+          grep -Fx 'SERIAL1_BAUD 115' "$defaults"
+          grep -Fx 'SERIAL1_PROTOCOL 2' "$defaults"
           echo '---- Generated firmware files ----'
           ls -lh build/MatekF405-TE/bin/ardurover*
 
       - name: Downloadable APJ and HEX
         uses: actions/upload-artifact@v4
         with:
-          name: ArduRover-CustomF405-TZ-NoBaro-CAN2
+          name: ArduRover-F405-NoBaro-AHRS12-UART1-115200
           path: |
             ardupilot/build/MatekF405-TE/bin/ardurover.apj
             ardupilot/build/MatekF405-TE/bin/ardurover.hex
