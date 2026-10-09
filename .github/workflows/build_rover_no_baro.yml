@@ -115,13 +115,16 @@ jobs:
         working-directory: ardupilot
         run: |
           set -euo pipefail
-          cat > custom_defaults.parm <<'PARAMS'
+          # Board-level defaults.parm is discovered automatically by chibios_hwdef.py.
+          # Avoid passing a relative --default-parameters path: ArduPilot
+          # resolves it relative to the board's hwdef directory.
+          cat > libraries/AP_HAL_ChibiOS/hwdef/MatekF405-TE/defaults.parm <<'PARAMS'
           AHRS_ORIENTATION 12
           SERIAL1_BAUD 115
           SERIAL1_PROTOCOL 2
           PARAMS
           echo "Custom factory defaults:"
-          cat custom_defaults.parm
+          cat libraries/AP_HAL_ChibiOS/hwdef/MatekF405-TE/defaults.parm
 
       - name: Build firmware
         working-directory: ardupilot
@@ -146,15 +149,26 @@ jobs:
           ./waf configure --board MatekF405-TE --bootloader
           ./waf bootloader -j2
           cp build/MatekF405-TE/bin/AP_Bootloader.bin Tools/bootloaders/MatekF405-TE_bl.bin
-          ./waf configure --board MatekF405-TE --default-parameters=custom_defaults.parm
+          ./waf configure --board MatekF405-TE
           ./waf rover -j2
-          echo "---- Verify processed factory defaults were embedded ----"
-          defaults="$(find build/MatekF405-TE -name processed_defaults.parm -print -quit)"
-          test -n "$defaults" || { echo "::error::processed_defaults.parm not generated"; exit 1; }
-          grep -Fx 'AHRS_ORIENTATION 12' "$defaults"
-          grep -Fx 'SERIAL1_BAUD 115' "$defaults"
-          grep -Fx 'SERIAL1_PROTOCOL 2' "$defaults"
-          echo '---- Generated firmware files ----'
+          echo '---- Check generated firmware and embedded defaults ----'
+          test -s build/MatekF405-TE/bin/ardurover.apj
+          test -s build/MatekF405-TE/bin/ardurover_with_bl.hex
+          defaults="build/MatekF405-TE/processed_defaults.parm"
+          if test -s "$defaults"; then
+            grep -Fx 'AHRS_ORIENTATION 12' "$defaults"
+            grep -Fx 'SERIAL1_BAUD 115' "$defaults"
+            grep -Fx 'SERIAL1_PROTOCOL 2' "$defaults"
+          else
+            echo "::error::ArduPilot did not process board defaults.parm"
+            find build -name '*defaults*' -print
+            exit 1
+          fi
+          # Confirm ROMFS data packed into the firmware source.
+          romfs="$(find build/MatekF405-TE -name ap_romfs_embedded.h -print -quit)"
+          if test -n "$romfs"; then
+            grep -q 'defaults.parm' "$romfs" || { echo "::error::defaults.parm missing from firmware ROMFS"; exit 1; }
+          fi
           ls -lh build/MatekF405-TE/bin/ardurover*
 
       - name: Downloadable APJ and HEX
@@ -165,4 +179,6 @@ jobs:
             ardupilot/build/MatekF405-TE/bin/ardurover.apj
             ardupilot/build/MatekF405-TE/bin/ardurover.hex
             ardupilot/build/MatekF405-TE/bin/ardurover_with_bl.hex
+            ardupilot/build/MatekF405-TE/bin/ardurover.bin
+            ardupilot/build/MatekF405-TE/processed_defaults.parm
           if-no-files-found: error
