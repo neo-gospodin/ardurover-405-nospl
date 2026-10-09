@@ -1,6 +1,9 @@
-name: Build ArduRover 4.7.1 MatekF405-TE without barometer
+name: Custom F405 TZ Rover 4.7.1 no barometer
 
 on:
+  push:
+    paths:
+      - '.github/workflows/build_rover_no_baro.yml'
   workflow_dispatch:
 
 permissions:
@@ -43,6 +46,42 @@ jobs:
           echo '---- Changed barometer configuration ----'
           grep -En 'BARO SPL06|AP_BARO_SPL06_ENABLED|HAL_BARO_ALLOW_INIT_NO_BARO' "$f"
 
+      - name: Adapt hwdef to custom board pinout from TZ
+        working-directory: ardupilot
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          base=Path("libraries/AP_HAL_ChibiOS/hwdef/MatekF405-TE")
+          p=base/"hwdef.dat"
+          s=p.read_text()
+          def change(pattern,replacement,label):
+              global s
+              s,n=re.subn(pattern,replacement,s,flags=re.M)
+              if n!=1: raise RuntimeError(f"{label} expected one line, found {n}")
+          change(r"^PB5\s+PINIO2\s+OUTPUT\s+GPIO\(82\)\s+LOW.*$", "PB5 CAN2_RX CAN2", "CAN2 RX")
+          change(r"^PB6\s+TIM4_CH1\s+TIM4\s+PWM\(11\)\s+GPIO\(60\)\s+NODMA.*$", "PB6 CAN2_TX CAN2", "CAN2 TX")
+          change(r"^PB1\s+TIM3_CH4\s+TIM3\s+PWM\(12\)\s+GPIO\(61\).*$", "PB1 RS485_DIR OUTPUT GPIO(61) LOW", "RS485 DIR")
+          # Custom PCB has no OSD or SD card. W25Q128 SPI2 remains enabled.
+          change(r"^PB12 OSD_CS CS$", "# No OSD on custom board", "OSD CS")
+          change(r"^PC1\s+SDCARD_CS CS$", "# No SD card on custom board", "SD CS")
+          change(r"^SPIDEV osd.*$", "# No OSD SPI device", "OSD")
+          change(r"^SPIDEV sdcard.*$", "# No SD SPI device", "SD")
+          change(r"^define OSD_ENABLED 1$", "define OSD_ENABLED 0", "OSD flag")
+          change(r"^define HAL_OSD_TYPE_DEFAULT 1$", "define HAL_OSD_TYPE_DEFAULT 0", "OSD type")
+          change(r"^define HAL_OS_FATFS_IO 1$", "define HAL_OS_FATFS_IO 0", "FATFS")
+          change(r"^ROMFS_WILDCARD libraries/AP_OSD/fonts/font0.bin$", "# No OSD font", "OSD font")
+          for item in ("SPIDEV icm42605  SPI1","IMU Invensensev3 SPI:icm42605 ROTATION_YAW_90","PC14 IMU_CS CS","PB4  SPI1_MISO SPI1"):
+              assert item in s, f"IMU setting missing: {item}"
+          p.write_text(s)
+          p=base/"hwdef-bl.dat"
+          t=p.read_text()
+          t,n=re.subn(r"^PB5\s+PINIO2\s+OUTPUT LOW.*\n","",t,flags=re.M)
+          if n!=1: raise RuntimeError("bootloader PB5 pin mismatch")
+          p.write_text(t)
+          print("custom board patched")
+          PY
+
       - name: Build firmware
         working-directory: ardupilot
         shell: bash
@@ -61,6 +100,9 @@ jobs:
             fi
           fi
           command -v arm-none-eabi-gcc
+          ./waf configure --board MatekF405-TE --bootloader
+          ./waf bootloader -j2
+          cp build/MatekF405-TE/bin/AP_Bootloader.bin Tools/bootloaders/MatekF405-TE_bl.bin
           ./waf configure --board MatekF405-TE
           ./waf rover -j2
           echo '---- Generated firmware files ----'
@@ -69,7 +111,7 @@ jobs:
       - name: Downloadable APJ and HEX
         uses: actions/upload-artifact@v4
         with:
-          name: ArduRover-4.7.1-MatekF405-TE-NO-BARO
+          name: ArduRover-CustomF405-TZ-NoBaro-CAN2
           path: |
             ardupilot/build/MatekF405-TE/bin/ardurover.apj
             ardupilot/build/MatekF405-TE/bin/ardurover.hex
