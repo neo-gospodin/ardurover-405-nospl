@@ -40,7 +40,7 @@ jobs:
           arm-none-eabi-gcc --version
           arm-none-eabi-g++ --version
           # Fail immediately if GCC cannot find standard C++ headers.
-          printf '#include <type_traits>\\nstatic_assert(std::is_integral<int>::value, "missing ARM C++ headers");\\n' | \
+          printf '%s\\n' '#include <type_traits>' 'static_assert(std::is_integral<int>::value, "missing ARM C++ headers");' | \
             arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -std=gnu++14 -x c++ -fsyntax-only -
           # Verify the ARM target standard C++ library is installed.
           libstdcpp="$(arm-none-eabi-g++ -print-file-name=libstdc++.a)"
